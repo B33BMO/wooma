@@ -61,6 +61,11 @@ fi
 # --- build ------------------------------------------------------------------
 
 info "building wooma (takes a minute or two)"
+# Cargo's built-in git can't follow some git configs (e.g. an insteadOf rule
+# that rewrites https://github.com/ to ssh), so use the system git when present.
+if command -v git > /dev/null 2>&1; then
+    export CARGO_NET_GIT_FETCH_WITH_CLI=true
+fi
 cargo install --git "$REPO" --locked --force wooma
 
 bin="${CARGO_HOME:-$HOME/.cargo}/bin/wooma"
