@@ -22,12 +22,22 @@ DNS, IP intel, whois, HTTP timing, port scanning and a speed test in one TUI.
 curl -fsSL https://raw.githubusercontent.com/B33BMO/wooma/main/install.sh | sh
 ```
 
-This builds wooma with cargo (installing Rust through rustup first if you don't
-have it). On Linux it then offers to set up ICMP access, asking for sudo; see
-[Permissions](#permissions). To skip the prompt, set
-`WOOMA_ICMP=sysctl|setcap|skip` on the `sh` side of the pipe.
+This downloads a prebuilt static binary for your platform (Linux x86_64 /
+arm64, macOS Intel / Apple Silicon) into `~/.local/bin`, checks its checksum,
+and on Linux offers to set up ICMP access, asking for sudo; see
+[Permissions](#permissions). On other platforms it falls back to building from
+source with cargo.
 
-If you already have Rust and want to handle permissions yourself:
+Environment settings, set on the `sh` side of the pipe:
+
+| variable | effect |
+|----------|--------|
+| `WOOMA_INSTALL_DIR=dir` | install somewhere other than `~/.local/bin` |
+| `WOOMA_VERSION=v0.1.0` | a specific release instead of the latest |
+| `WOOMA_ICMP=sysctl\|setcap\|skip` | pick the permission fix without asking |
+
+Prebuilt binaries are also on the [releases page](https://github.com/B33BMO/wooma/releases).
+With Rust installed you can build it yourself:
 `cargo install --git https://github.com/B33BMO/wooma --locked`
 
 ## Usage
