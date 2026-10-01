@@ -3,7 +3,6 @@
 
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use serde_json::Value;
 use tokio::runtime::Handle;
@@ -44,7 +43,6 @@ pub enum Fetch<T> {
 #[derive(Debug)]
 pub struct IpLookup {
     pub input: String,
-    pub started: Instant,
     pub ip: Fetch<IpAddr>,
     /// True when the input was blank and we looked up our own public address.
     pub is_self: bool,
@@ -56,7 +54,6 @@ pub fn start(rt: &Handle, input: &str, abuse_key: Option<String>, enricher: Enri
     let input = input.trim().to_string();
     let state = Arc::new(Mutex::new(IpLookup {
         input: input.clone(),
-        started: Instant::now(),
         ip: Fetch::Pending,
         is_self: input.is_empty(),
         geo: Fetch::Pending,

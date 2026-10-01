@@ -5,42 +5,30 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Axis, Chart, Dataset, GraphType, Paragraph};
 use ratatui::Frame;
 
-use super::panel;
+use super::{empty_hint, panel};
 use super::theme::*;
 use crate::app::App;
 use crate::net::speed::{bloat_grade, jitter, median, Phase, SpeedTest};
 
 const DOWN: Color = ACCENT;
-const UP: Color = Color::Rgb(255, 95, 175);
+const UP: Color = Color::Magenta;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, t: f32) {
     let Some(h) = &app.speed else {
-        let msg = Paragraph::new(vec![
-            Line::raw(""),
-            Line::from(Span::styled("how fast is your connection?", Style::default().fg(DIM))),
-            Line::from(vec![
-                Span::styled("press ", Style::default().fg(FAINT)),
-                Span::styled("enter", Style::default().fg(ACCENT2)),
-                Span::styled(" to run a ~25s test against cloudflare", Style::default().fg(FAINT)),
-            ]),
-        ])
-        .alignment(Alignment::Center)
-        .block(panel("speed"));
-        f.render_widget(msg, area);
-        return;
+        return empty_hint(f, area, "speed", "No test run yet", "press enter to run a ~25s test against speed.cloudflare.com");
     };
     let s = h.state.lock().unwrap();
     let [top, cards, bottom] =
-        Layout::vertical([Constraint::Length(4), Constraint::Length(9), Constraint::Fill(1)]).areas(area);
+        Layout::vertical([Constraint::Length(4), Constraint::Length(5), Constraint::Fill(1)]).areas(area);
     let [down_card, up_card, lat_card] =
         Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1), Constraint::Fill(1)]).areas(cards);
     let [chart_area, bloat_area] = Layout::horizontal([Constraint::Fill(3), Constraint::Fill(2)]).areas(bottom);
 
     draw_phases(f, &s, top, t);
     let live = |p: Phase| (s.phase == p).then_some(s.current);
-    draw_card(f, down_card, "download", s.down_mbps.or(live(Phase::Download)), "Mbps", DOWN, s.phase == Phase::Download, t);
-    draw_card(f, up_card, "upload", s.up_mbps.or(live(Phase::Upload)), "Mbps", UP, s.phase == Phase::Upload, t);
-    draw_card(f, lat_card, "latency", median(&s.idle), "ms idle", GOOD, s.phase == Phase::Latency, t);
+    draw_card(f, down_card, "download", s.down_mbps.or(live(Phase::Download)), "Mbps", DOWN, s.phase == Phase::Download);
+    draw_card(f, up_card, "upload", s.up_mbps.or(live(Phase::Upload)), "Mbps", UP, s.phase == Phase::Upload);
+    draw_card(f, lat_card, "latency", median(&s.idle), "ms idle", GOOD, s.phase == Phase::Latency);
     draw_chart(f, &s, chart_area);
     draw_bloat(f, &s, bloat_area);
 }
@@ -54,9 +42,9 @@ fn draw_phases(f: &mut Frame, s: &SpeedTest, area: Rect, t: f32) {
         let (mark, color) = if i < cur || s.phase == Phase::Done {
             ('✓', GOOD)
         } else if i == cur {
-            (spinner(t), ACCENT)
+            (spinner(t), TEXT)
         } else {
-            ('○', FAINT)
+            ('-', FAINT)
         };
         spans.push(Span::styled(format!("{mark} "), Style::default().fg(color)));
         spans.push(Span::styled(
@@ -64,37 +52,39 @@ fn draw_phases(f: &mut Frame, s: &SpeedTest, area: Rect, t: f32) {
             Style::default().fg(if i == cur { TEXT } else { DIM }).add_modifier(if i == cur { Modifier::BOLD } else { Modifier::empty() }),
         ));
         if i + 1 < names.len() {
-            spans.push(Span::styled("  ──  ", Style::default().fg(FAINT)));
+            spans.push(Span::styled("   ", Style::default()));
         }
     }
     if s.phase == Phase::Done && s.error.is_none() {
-        spans.push(Span::styled("   done · enter to run again", Style::default().fg(DIM)));
+        spans.push(Span::styled("   done, press enter to run again", Style::default().fg(DIM)));
     }
     let meta = match (&s.error, &s.meta) {
         (Some(e), _) => Line::from(Span::styled(format!(" {e}"), Style::default().fg(BAD))),
         (None, Some(m)) => Line::from(vec![
             Span::styled(" cloudflare ", Style::default().fg(DIM)),
-            Span::styled(m.colo.clone(), Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("  ·  {}  ·  {}  ·  {}", m.isp, m.ip, m.location), Style::default().fg(DIM)),
+            Span::styled(m.colo.clone(), Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("  |  {}  |  {}  |  {}", m.isp, m.ip, m.location), Style::default().fg(DIM)),
         ]),
         (None, None) => Line::from(Span::styled(" speed.cloudflare.com", Style::default().fg(DIM))),
     };
     f.render_widget(Paragraph::new(vec![Line::from(spans), meta]).block(panel("speed test")), area);
 }
 
-#[allow(clippy::too_many_arguments)]
-fn draw_card(f: &mut Frame, area: Rect, title: &str, value: Option<f64>, unit: &str, color: Color, active: bool, t: f32) {
+fn draw_card(f: &mut Frame, area: Rect, title: &str, value: Option<f64>, unit: &str, color: Color, active: bool) {
     let text = match value {
         Some(v) if v >= 100.0 => format!("{v:.0}"),
         Some(v) => format!("{v:.1}"),
         None => "-".into(),
     };
-    // The active card's number breathes through the gradient while measuring.
-    let c = if active { gradient(t * 0.4) } else if value.is_some() { color } else { FAINT };
-    let mut lines: Vec<Line> = vec![Line::raw("")];
-    lines.extend(big_text(&text).into_iter().map(|r| Line::from(Span::styled(r, Style::default().fg(c)))));
-    lines.push(Line::from(Span::styled(unit.to_string(), Style::default().fg(DIM))));
-    let block = panel(title).border_style(Style::default().fg(if active { scale(c, 0.8) } else { FAINT }));
+    let c = if value.is_some() { color } else { FAINT };
+    let lines = vec![
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(text, Style::default().fg(c).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {unit}"), Style::default().fg(DIM)),
+        ]),
+    ];
+    let block = panel(title).border_style(Style::default().fg(if active { TEXT } else { FAINT }));
     f.render_widget(Paragraph::new(lines).alignment(Alignment::Center).block(block), area);
 }
 
@@ -108,7 +98,7 @@ fn draw_chart(f: &mut Frame, s: &SpeedTest, area: Rect) {
         Dataset::default().name("down").marker(Marker::Braille).graph_type(GraphType::Line).style(Style::default().fg(DOWN)).data(&down),
         Dataset::default().name("up").marker(Marker::Braille).graph_type(GraphType::Line).style(Style::default().fg(UP)).data(&up),
     ])
-    .block(panel("throughput · Mbps"))
+    .block(panel("throughput (Mbps)"))
     .x_axis(Axis::default().bounds([0.0, n]).style(Style::default().fg(FAINT)))
     .y_axis(Axis::default().bounds([0.0, max]).labels(vec![label(0.0), label(max / 2.0), label(max)]).style(Style::default().fg(FAINT)));
     f.render_widget(chart, area);
@@ -120,7 +110,7 @@ fn draw_bloat(f: &mut Frame, s: &SpeedTest, area: Rect) {
         Line::from(vec![
             Span::styled(format!(" {label:<15}"), Style::default().fg(DIM)),
             Span::styled(
-                v.map(|v| format!("{v:.1} ms")).unwrap_or_else(|| "—".into()),
+                v.map(|v| format!("{v:.1} ms")).unwrap_or_else(|| "-".into()),
                 Style::default().fg(v.map(rtt_color).unwrap_or(FAINT)),
             ),
             Span::styled(extra, Style::default().fg(FAINT)),
@@ -139,7 +129,7 @@ fn draw_bloat(f: &mut Frame, s: &SpeedTest, area: Rect) {
         let (grade, inc) = bloat_grade(i, l);
         let color = match grade {
             "A+" | "A" => GOOD,
-            "B" => Color::Rgb(190, 235, 110),
+            "B" => GOOD,
             "C" => WARN,
             _ => BAD,
         };
@@ -152,7 +142,7 @@ fn draw_bloat(f: &mut Frame, s: &SpeedTest, area: Rect) {
     if s.bytes_down + s.bytes_up > 0 {
         lines.push(Line::raw(""));
         lines.push(Line::from(Span::styled(
-            format!(" moved {} down · {} up", super::http::human_bytes(s.bytes_down), super::http::human_bytes(s.bytes_up)),
+            format!(" transferred {} down, {} up", super::http::human_bytes(s.bytes_down), super::http::human_bytes(s.bytes_up)),
             Style::default().fg(FAINT),
         )));
     }

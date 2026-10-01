@@ -1,60 +1,22 @@
 use std::collections::VecDeque;
 
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
-pub const DIM: Color = Color::Rgb(108, 112, 134);
-pub const FAINT: Color = Color::Rgb(62, 64, 82);
-pub const TEXT: Color = Color::Rgb(205, 214, 244);
-pub const GOOD: Color = Color::Rgb(120, 230, 140);
-pub const WARN: Color = Color::Rgb(250, 210, 100);
-pub const BAD: Color = Color::Rgb(255, 95, 110);
-pub const ACCENT: Color = Color::Rgb(0, 220, 255);
-pub const ACCENT2: Color = Color::Rgb(190, 120, 255);
-pub const SEL_BG: Color = Color::Rgb(38, 40, 58);
-
-const STOPS: [(f32, f32, f32); 3] = [(0.0, 220.0, 255.0), (170.0, 120.0, 255.0), (255.0, 95.0, 175.0)];
-
-/// Cyclic cyan → violet → pink gradient, `t` in any range.
-pub fn gradient(t: f32) -> Color {
-    let t = t.rem_euclid(1.0) * STOPS.len() as f32;
-    let i = t as usize % STOPS.len();
-    let f = t.fract();
-    let (a, b) = (STOPS[i], STOPS[(i + 1) % STOPS.len()]);
-    let lerp = |x: f32, y: f32| (x + (y - x) * f) as u8;
-    Color::Rgb(lerp(a.0, b.0), lerp(a.1, b.1), lerp(a.2, b.2))
-}
-
-pub fn scale(c: Color, k: f32) -> Color {
-    match c {
-        Color::Rgb(r, g, b) => {
-            let f = |v: u8| (v as f32 * k).clamp(0.0, 255.0) as u8;
-            Color::Rgb(f(r), f(g), f(b))
-        }
-        other => other,
-    }
-}
-
-/// Text painted with a flowing gradient; `phase` animates it.
-pub fn gradient_spans(text: &str, phase: f32, spread: f32, bold: bool) -> Vec<Span<'static>> {
-    text.chars()
-        .enumerate()
-        .map(|(i, ch)| {
-            let mut s = Style::default().fg(gradient(phase + i as f32 * spread));
-            if bold {
-                s = s.add_modifier(Modifier::BOLD);
-            }
-            Span::styled(ch.to_string(), s)
-        })
-        .collect()
-}
+// Named ANSI colors so the UI follows the user's terminal theme (dark or light).
+pub const TEXT: Color = Color::Reset;
+pub const DIM: Color = Color::DarkGray;
+pub const FAINT: Color = Color::DarkGray;
+pub const GOOD: Color = Color::Green;
+pub const WARN: Color = Color::Yellow;
+pub const BAD: Color = Color::Red;
+pub const ACCENT: Color = Color::Cyan;
+pub const ACCENT2: Color = Color::Blue;
 
 pub fn rtt_color(ms: f64) -> Color {
     match ms {
-        m if m < 30.0 => GOOD,
-        m if m < 80.0 => Color::Rgb(190, 235, 110),
-        m if m < 150.0 => WARN,
-        m if m < 300.0 => Color::Rgb(255, 150, 80),
+        m if m < 80.0 => GOOD,
+        m if m < 200.0 => WARN,
         _ => BAD,
     }
 }
@@ -63,7 +25,6 @@ pub fn loss_color(pct: f64) -> Color {
     match pct {
         p if p <= 0.0 => GOOD,
         p if p < 5.0 => WARN,
-        p if p < 30.0 => Color::Rgb(255, 150, 80),
         _ => BAD,
     }
 }
@@ -72,7 +33,7 @@ pub fn fmt_ms(v: Option<f64>) -> String {
     match v {
         Some(ms) if ms >= 100.0 => format!("{ms:.0}"),
         Some(ms) => format!("{ms:.1}"),
-        None => "—".into(),
+        None => "-".into(),
     }
 }
 
@@ -105,7 +66,7 @@ pub fn sparkline(history: &VecDeque<Option<f64>>, width: usize) -> Line<'static>
         })
         .collect();
     if window.len() < width {
-        spans.insert(0, Span::styled("·".repeat(width - window.len()), Style::default().fg(FAINT)));
+        spans.insert(0, Span::styled(" ".repeat(width - window.len()), Style::default()));
     }
     Line::from(spans)
 }
@@ -113,60 +74,14 @@ pub fn sparkline(history: &VecDeque<Option<f64>>, width: usize) -> Line<'static>
 const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub fn spinner(secs: f32) -> char {
-    SPINNER[(secs * 12.0) as usize % SPINNER.len()]
+    SPINNER[(secs * 10.0) as usize % SPINNER.len()]
 }
 
-pub fn ease_out(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    1.0 - (1.0 - t).powi(3)
-}
-
-/// A chunky 3x5 font for headline numbers.
-fn glyph(c: char) -> [&'static str; 5] {
-    match c {
-        '0' => ["███", "█ █", "█ █", "█ █", "███"],
-        '1' => ["██ ", " █ ", " █ ", " █ ", "███"],
-        '2' => ["███", "  █", "███", "█  ", "███"],
-        '3' => ["███", "  █", "███", "  █", "███"],
-        '4' => ["█ █", "█ █", "███", "  █", "  █"],
-        '5' => ["███", "█  ", "███", "  █", "███"],
-        '6' => ["███", "█  ", "███", "█ █", "███"],
-        '7' => ["███", "  █", "  █", "  █", "  █"],
-        '8' => ["███", "█ █", "███", "█ █", "███"],
-        '9' => ["███", "█ █", "███", "  █", "███"],
-        '.' => [" ", " ", " ", " ", "█"],
-        '%' => ["█ █", "  █", " █ ", "█  ", "█ █"],
-        '-' => ["   ", "   ", "███", "   ", "   "],
-        _ => ["   ", "   ", "   ", "   ", "   "],
-    }
-}
-
-pub fn big_text(s: &str) -> [String; 5] {
-    let mut rows: [String; 5] = Default::default();
-    for (i, c) in s.chars().enumerate() {
-        for (r, row) in rows.iter_mut().enumerate() {
-            if i > 0 {
-                row.push(' ');
-            }
-            row.push_str(glyph(c)[r]);
-        }
-    }
-    rows
-}
-
-/// A horizontal meter, `frac` in 0..=1, using eighth-blocks for a smooth edge.
+/// A horizontal meter, `frac` in 0..=1.
 pub fn meter(frac: f64, width: usize, color: Color) -> Line<'static> {
-    const EIGHTHS: [char; 8] = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
-    let cells = frac.clamp(0.0, 1.0) * width as f64;
-    let full = cells.floor() as usize;
-    let rem = ((cells - full as f64) * 8.0) as usize;
-    let mut s = "█".repeat(full);
-    if full < width {
-        s.push(EIGHTHS[rem]);
-    }
-    let pad = width.saturating_sub(s.chars().count());
+    let full = (frac.clamp(0.0, 1.0) * width as f64).round() as usize;
     Line::from(vec![
-        Span::styled(s, Style::default().fg(color)),
-        Span::styled("·".repeat(pad), Style::default().fg(FAINT)),
+        Span::styled("━".repeat(full), Style::default().fg(color)),
+        Span::styled("─".repeat(width - full), Style::default().fg(FAINT)),
     ])
 }

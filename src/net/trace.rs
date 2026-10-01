@@ -31,8 +31,6 @@ pub struct TraceState {
     pub rounds: u64,
     pub sock_kind: Option<SockKind>,
     pub started: Instant,
-    /// (ttl, when) of the most recent reply, for the path animation.
-    pub last_reply: Option<(u8, Instant)>,
 }
 
 impl TraceState {
@@ -66,7 +64,6 @@ impl TraceSession {
             rounds: 0,
             sock_kind: None,
             started: Instant::now(),
-            last_reply: None,
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
@@ -161,7 +158,6 @@ fn run(
                 hop.addrs.insert(0, r.from);
             }
             hop.stats.push(Some(ms));
-            st.last_reply = Some((ttl, Instant::now()));
         }
 
         let expired: Vec<u16> = pending

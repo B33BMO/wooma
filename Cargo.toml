@@ -2,7 +2,7 @@
 name = "wooma"
 version = "0.1.0"
 edition = "2024"
-description = "A flowy terminal toolkit for network and IT tooling: ping, traceroute, dns, ip intel, whois, http timing, port scan and speed test"
+description = "A terminal toolkit for network diagnostics: ping, traceroute, dns, ip intel, whois, http timing, port scan and speed test"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/B33BMO/wooma"
 readme = "README.md"

@@ -119,8 +119,6 @@ pub struct Scan {
     pub ports: Vec<u16>,
     pub states: Vec<PortState>,
     pub done: usize,
-    /// When each open port was found, for the reveal animation.
-    pub found_at: Vec<(u16, Instant)>,
 }
 
 impl Scan {
@@ -185,7 +183,6 @@ pub fn start(rt: &Handle, input: &str) -> ScanHandle {
         states: vec![PortState::Pending; ports.len()],
         ports: ports.clone(),
         done: 0,
-        found_at: vec![],
     }));
     let stop = Arc::new(AtomicBool::new(false));
     if state.lock().unwrap().error.is_some() {
@@ -219,9 +216,6 @@ pub fn start(rt: &Handle, input: &str) -> ScanHandle {
                 let result = probe(SocketAddr::new(ip, port)).await;
                 drop(permit);
                 let mut s = st.lock().unwrap();
-                if matches!(result, PortState::Open { .. }) {
-                    s.found_at.push((port, Instant::now()));
-                }
                 s.states[i] = result;
                 s.done += 1;
             }));

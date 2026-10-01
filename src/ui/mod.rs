@@ -4,31 +4,25 @@ mod ip;
 mod ping;
 mod ports;
 mod speed;
-pub mod splash;
 pub mod theme;
 mod trace;
 mod whois;
 
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, Tab};
 use theme::*;
 
-pub fn draw(f: &mut Frame, app: &App) {
-    let t = app.started.elapsed().as_secs_f32();
-    if app.splash {
-        splash::draw(f, t);
-        return;
-    }
-
+/// `t` is seconds since launch; it only drives the busy spinners.
+pub fn draw(f: &mut Frame, app: &App, t: f32) {
     let [header, body, footer] =
         Layout::vertical([Constraint::Length(2), Constraint::Fill(1), Constraint::Length(1)]).areas(f.area());
 
-    draw_header(f, app, header, t);
+    draw_header(f, app, header);
     match app.tab {
         Tab::Ping => ping::draw(f, app, body, t),
         Tab::Trace => trace::draw(f, app, body, t),
@@ -36,84 +30,43 @@ pub fn draw(f: &mut Frame, app: &App) {
         Tab::Ip => ip::draw(f, app, body, t),
         Tab::Whois => whois::draw(f, app, body, t),
         Tab::Http => http::draw(f, app, body, t),
-        Tab::Ports => ports::draw(f, app, body, t),
+        Tab::Ports => ports::draw(f, app, body),
         Tab::Speed => speed::draw(f, app, body, t),
     }
-    draw_footer(f, app, footer, t);
+    draw_footer(f, app, footer);
 }
 
-/// Where each tab label sits in the header, as (x offset, width).
-fn tab_positions() -> Vec<(u16, u16)> {
-    let mut x = 10; // after the logo
-    Tab::ALL
-        .iter()
-        .enumerate()
-        .map(|(i, tab)| {
-            let w = format!(" {} {} ", i + 1, tab.title()).chars().count() as u16;
-            let pos = (x, w);
-            x += w + 1;
-            pos
-        })
-        .collect()
-}
-
-fn draw_header(f: &mut Frame, app: &App, area: Rect, t: f32) {
-    let mut spans = vec![Span::raw(" ")];
-    spans.push(Span::styled("◉ ", Style::default().fg(gradient(t * 0.4))));
-    spans.extend(gradient_spans("wooma", t * 0.3, 0.08, true));
-    spans.push(Span::raw("  "));
+fn draw_header(f: &mut Frame, app: &App, area: Rect) {
+    let mut spans = vec![Span::styled(" wooma ", Style::default().add_modifier(Modifier::BOLD)), Span::raw(" ")];
     for (i, tab) in Tab::ALL.iter().enumerate() {
-        let active = *tab == app.tab;
-        let style = if active {
-            Style::default().fg(TEXT).bg(SEL_BG).add_modifier(Modifier::BOLD)
+        let style = if *tab == app.tab {
+            Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
         } else {
             Style::default().fg(DIM)
         };
-        spans.push(Span::styled(format!(" {}", i + 1), style.fg(if active { ACCENT } else { FAINT })));
-        spans.push(Span::styled(format!(" {} ", tab.title()), style));
+        spans.push(Span::styled(format!(" {} {} ", i + 1, tab.title()), style));
         spans.push(Span::raw(" "));
     }
-    let [left, right] = Layout::horizontal([Constraint::Fill(1), Constraint::Length(12)]).areas(Rect { height: 1, ..area });
+    let [left, right] = Layout::horizontal([Constraint::Fill(1), Constraint::Length(10)]).areas(Rect { height: 1, ..area });
     f.render_widget(Paragraph::new(Line::from(spans)), left);
+    let version = Line::from(Span::styled(format!("v{} ", env!("CARGO_PKG_VERSION")), Style::default().fg(DIM)));
+    f.render_widget(Paragraph::new(version.right_aligned()), right);
 
-    let up = app.started.elapsed().as_secs();
-    let right_line = Line::from(vec![
-        Span::styled(format!("{} ", spinner(t)), Style::default().fg(scale(ACCENT, 0.7))),
-        Span::styled(format!("up {} ", fmt_dur(up)), Style::default().fg(DIM)),
-    ])
-    .right_aligned();
-    f.render_widget(Paragraph::new(right_line), right);
-
-    // Underline slides from the previous tab to the new one.
-    let pos = tab_positions();
-    let to = pos[Tab::ALL.iter().position(|x| *x == app.tab).unwrap()];
-    let from = pos[Tab::ALL.iter().position(|x| *x == app.prev_tab).unwrap()];
-    let k = ease_out(app.tab_changed.elapsed().as_secs_f32() / 0.28);
-    let x = from.0 as f32 + (to.0 as f32 - from.0 as f32) * k;
-    let w = from.1 as f32 + (to.1 as f32 - from.1 as f32) * k;
-    let rule = area.y + 1;
-    let buf = f.buffer_mut();
-    buf.set_string(area.x, rule, "─".repeat(area.width as usize), Style::default().fg(FAINT));
-    let bar = "━".repeat(w.round() as usize);
-    for (i, ch) in bar.chars().enumerate() {
-        let cx = area.x + x.round() as u16 + i as u16;
-        if cx < area.x + area.width {
-            buf.set_string(cx, rule, ch.to_string(), Style::default().fg(gradient(t * 0.5 + i as f32 * 0.04)));
-        }
-    }
+    let rule = Rect { y: area.y + 1, height: 1, ..area };
+    f.render_widget(Paragraph::new(Span::styled("─".repeat(area.width as usize), Style::default().fg(FAINT))), rule);
 }
 
-fn draw_footer(f: &mut Frame, app: &App, area: Rect, t: f32) {
+fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     if let Some(buf) = &app.input {
-        let cursor = if ((t * 2.5) as u32).is_multiple_of(2) { "▌" } else { " " };
+        let prompt = format!(" {}: ", app.prompt_label());
+        let x = area.x + (prompt.chars().count() + buf.chars().count()) as u16;
         let line = Line::from(vec![
-            Span::styled(" ❯ ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{}: ", app.prompt_label()), Style::default().fg(DIM)),
+            Span::styled(prompt, Style::default().fg(ACCENT)),
             Span::styled(buf.clone(), Style::default().fg(TEXT)),
-            Span::styled(cursor, Style::default().fg(ACCENT)),
-            Span::styled("   enter ok · esc cancel", Style::default().fg(FAINT)),
+            Span::styled("   enter: ok  esc: cancel", Style::default().fg(DIM)),
         ]);
         f.render_widget(Paragraph::new(line), area);
+        f.set_cursor_position(Position::new(x.min(area.right().saturating_sub(1)), area.y));
         return;
     }
 
@@ -129,38 +82,48 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect, t: f32) {
     };
     let mut spans = vec![Span::raw(" ")];
     for (k, v) in keys.iter().chain([("tab", "switch"), ("q", "quit")].iter()) {
-        spans.push(Span::styled(*k, Style::default().fg(ACCENT2)));
-        spans.push(Span::styled(format!(" {v}  "), Style::default().fg(DIM)));
+        spans.push(Span::styled(*k, Style::default().add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(format!(" {v}   "), Style::default().fg(DIM)));
     }
-    // A flash message briefly takes over the right side of the footer, then fades.
+    // A status message briefly takes over the right side of the footer.
     let flash = app.flash.as_ref().filter(|(_, at)| at.elapsed().as_secs_f32() < 2.5);
     let flash_w = flash.map(|(m, _)| m.chars().count() as u16 + 2).unwrap_or(0);
     let [left, right] = Layout::horizontal([Constraint::Fill(1), Constraint::Length(flash_w)]).areas(area);
     f.render_widget(Paragraph::new(Line::from(spans)), left);
-    if let Some((msg, at)) = flash {
-        let fade = 1.0 - (at.elapsed().as_secs_f32() - 1.5).max(0.0);
-        let line = Line::from(Span::styled(format!("{msg} "), Style::default().fg(scale(WARN, fade))));
+    if let Some((msg, _)) = flash {
+        let line = Line::from(Span::styled(format!("{msg} "), Style::default().fg(WARN)));
         f.render_widget(Paragraph::new(line.right_aligned()), right);
     }
 }
 
 pub fn panel(title: &str) -> Block<'static> {
-    Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(FAINT))
-        .title(Span::styled(format!(" {title} "), Style::default().fg(ACCENT2).add_modifier(Modifier::BOLD)))
+    let block = Block::bordered().border_style(Style::default().fg(FAINT));
+    if title.is_empty() {
+        return block;
+    }
+    block.title(Span::styled(format!(" {title} "), Style::default().fg(TEXT).add_modifier(Modifier::BOLD)))
+}
+
+/// A tool's error, full width; the first line is the headline, the rest detail.
+pub fn error_panel(f: &mut Frame, msg: &str, area: Rect) {
+    let mut lines = vec![Line::raw("")];
+    for (i, l) in msg.lines().enumerate() {
+        let style = if i == 0 { Style::default().fg(BAD).add_modifier(Modifier::BOLD) } else { Style::default().fg(TEXT) };
+        lines.push(Line::from(Span::styled(format!(" {l}"), style)));
+    }
+    f.render_widget(Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false }).block(panel("error")), area);
+}
+
+pub fn first_line(msg: &str) -> String {
+    msg.lines().next().unwrap_or_default().to_string()
 }
 
 /// The placeholder shown before a tool has been run.
 pub fn empty_hint(f: &mut Frame, area: Rect, title: &str, headline: &str, hint: &str) {
     let msg = Paragraph::new(vec![
         Line::raw(""),
-        Line::from(Span::styled(headline.to_string(), Style::default().fg(DIM))),
-        Line::from(vec![
-            Span::styled("press ", Style::default().fg(FAINT)),
-            Span::styled("a", Style::default().fg(ACCENT2)),
-            Span::styled(format!(" {hint}"), Style::default().fg(FAINT)),
-        ]),
+        Line::from(Span::styled(headline.to_string(), Style::default().fg(TEXT))),
+        Line::from(Span::styled(hint.to_string(), Style::default().fg(DIM))),
     ])
     .alignment(ratatui::layout::Alignment::Center)
     .block(panel(title));

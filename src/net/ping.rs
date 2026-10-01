@@ -30,8 +30,6 @@ pub struct PingState {
     /// When the current Up/Down status began.
     pub status_since: Instant,
     pub flaps: u32,
-    /// Time of the most recent reply, for the heartbeat animation.
-    pub last_reply_at: Option<Instant>,
 }
 
 pub struct PingTarget {
@@ -50,7 +48,6 @@ impl PingTarget {
             sock_kind: None,
             status_since: Instant::now(),
             flaps: 0,
-            last_reply_at: None,
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
@@ -135,7 +132,6 @@ fn record(state: &Mutex<PingState>, rtt: Option<f64>) {
     let mut st = state.lock().unwrap();
     st.stats.push(rtt);
     let new_status = if rtt.is_some() {
-        st.last_reply_at = Some(Instant::now());
         Status::Up
     } else if st.stats.lost_streak() >= DOWN_AFTER || st.status == Status::Resolving {
         Status::Down

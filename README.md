@@ -1,22 +1,14 @@
 # wooma
 
-A flowy terminal toolkit for network and IT tooling, written in Rust.
-
-```
-██╗    ██╗ ██████╗  ██████╗ ███╗   ███╗ █████╗
-██║    ██║██╔═══██╗██╔═══██╗████╗ ████║██╔══██╗
-██║ █╗ ██║██║   ██║██║   ██║██╔████╔██║███████║
-██║███╗██║██║   ██║██║   ██║██║╚██╔╝██║██╔══██║
-╚███╔███╔╝╚██████╔╝╚██████╔╝██║ ╚═╝ ██║██║  ██║
- ╚══╝╚══╝  ╚═════╝  ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝
-```
+A terminal toolkit for network diagnostics, written in Rust. Ping, traceroute,
+DNS, IP intel, whois, HTTP timing, port scanning and a speed test in one TUI.
 
 ## Tools
 
 | tab | what it does |
 |-----|--------------|
 | **1 ping** | Ping many hosts at once. Live up/down state with flap count, loss %, min/avg/max, stddev, jitter, a scrolling latency chart and a status-page style timeline. |
-| **2 trace** | Continuous mtr-style traceroute. Per-hop loss, last/avg/best/worst/stdev, reverse DNS, ASN + owner + country (via Team Cymru), ECMP detection, and an animated path map. |
+| **2 trace** | Continuous mtr-style traceroute. Per-hop loss, last/avg/best/worst/stdev, reverse DNS, ASN + owner + country (via Team Cymru), and ECMP detection. |
 | **3 dns** | Queries A, AAAA, CNAME, MX, NS, TXT, SOA and CAA in parallel with TTLs and per-type timing, races system/Cloudflare/Google/Quad9 resolvers, and shows network info for the answer. Give it an IP for a PTR + ASN lookup. |
 | **4 ip** | IP intel: geolocation (db-ip), abuse confidence score and report history (AbuseIPDB), ASN/owner/prefix and reverse DNS. Leave it blank to look up your own public IP. |
 | **5 whois** | Port-43 whois that follows referrals (IANA → registry → registrar, or IANA → RIR), with a parsed summary, expiry countdown, domain age and highlighted raw output. |
@@ -24,11 +16,23 @@ A flowy terminal toolkit for network and IT tooling, written in Rust.
 | **7 ports** | Async TCP connect scan (top 100, `all`, ranges or lists) with service names, per-port RTT, banner grabbing and a live port map. |
 | **8 speed** | Download and upload over parallel streams via Cloudflare, plus idle latency, jitter, latency under load and a bufferbloat grade. |
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/B33BMO/wooma/main/install.sh | sh
+```
+
+This builds wooma with cargo (installing Rust through rustup first if you don't
+have it). On Linux it then offers to set up ICMP access, asking for sudo; see
+[Permissions](#permissions). To skip the prompt, set
+`WOOMA_ICMP=sysctl|setcap|skip` on the `sh` side of the pipe.
+
+If you already have Rust and want to handle permissions yourself:
+`cargo install --git https://github.com/B33BMO/wooma --locked`
+
 ## Usage
 
 ```sh
-cargo install --git https://github.com/B33BMO/wooma
-
 wooma                          # ping tab with 1.1.1.1 and 8.8.8.8
 wooma ping 1.1.1.1 github.com
 wooma trace github.com         # aliases: tracert, traceroute, mtr
@@ -41,9 +45,6 @@ wooma ports example.com 1-1024 # top | all | 1-1024 | 22,80,443   (aliases: scan
 wooma speed                    # alias: speedtest
 wooma config                   # show config path and settings
 ```
-
-The intro animation plays only when you launch the bare app. Direct lookups
-like `wooma dns x.com` skip it, and you can turn it off for good (see below).
 
 ### Keys
 
@@ -64,21 +65,33 @@ like `wooma dns x.com` skip it, and you can turn it off for good (see below).
 `~/.config/wooma/config.toml` (or `$XDG_CONFIG_HOME/wooma/config.toml`, or `$WOOMA_CONFIG`):
 
 ```toml
-splash = false                 # skip the intro animation
 abuseipdb_key = "your-api-key" # free at https://www.abuseipdb.com/account/api
 ```
 
-Environment overrides: `WOOMA_NO_SPLASH=1`, `ABUSEIPDB_KEY=...`.
+Environment overrides: `ABUSEIPDB_KEY=...`.
 
 ## Permissions
 
 wooma speaks ICMP directly. It tries a raw socket first and falls back to the
-unprivileged ICMP datagram socket.
+unprivileged ICMP datagram socket. Run `wooma config` to see which one you get.
 
 - **macOS**: everything works without sudo.
-- **Linux**: ping works unprivileged if your user is inside
-  `net.ipv4.ping_group_range`. Traceroute needs a raw socket:
-  `sudo setcap cap_net_raw+ep $(which wooma)` (or run with sudo).
+- **Linux**: ping and traceroute both work unprivileged if your group is inside
+  `net.ipv4.ping_group_range`. Most systemd distros allow this by default; WSL
+  and some minimal images don't (`cat /proc/sys/net/ipv4/ping_group_range`
+  prints `1 0`). Either open it up for everyone:
+
+  ```sh
+  echo 'net.ipv4.ping_group_range = 0 2147483647' | sudo tee /etc/sysctl.d/99-ping.conf
+  sudo sysctl --system
+  ```
+
+  or give just the binary raw sockets (redo this after every reinstall; the
+  install script does it for you):
+
+  ```sh
+  sudo setcap cap_net_raw+ep "$(which wooma)"
+  ```
 - **Windows**: use WSL.
 
 ## License

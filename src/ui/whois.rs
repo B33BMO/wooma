@@ -11,7 +11,7 @@ use crate::net::whois::{days_from_civil, parse_date, today, WhoisLookup};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, t: f32) {
     let Some(q) = &app.whois else {
-        return empty_hint(f, area, "whois", "who owns it?", "and type a domain or ip");
+        return empty_hint(f, area, "whois", "No lookup", "press a and enter a domain or ip");
     };
     let q = q.lock().unwrap();
     let [top, body] = Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).areas(area);
@@ -23,8 +23,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, t: f32) {
 
 fn draw_chain(f: &mut Frame, q: &WhoisLookup, area: Rect, t: f32) {
     let first = Line::from(vec![
-        Span::styled(" ⌕ ", Style::default().fg(ACCENT)),
-        Span::styled(q.input.clone(), Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" {}", q.input), Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
         Span::styled(if q.is_ip { "  address" } else { "  domain" }, Style::default().fg(DIM)),
     ]);
     let mut chain = vec![Span::raw(" ")];
@@ -32,12 +31,12 @@ fn draw_chain(f: &mut Frame, q: &WhoisLookup, area: Rect, t: f32) {
         if i > 0 {
             chain.push(Span::styled(" → ", Style::default().fg(FAINT)));
         }
-        let color = if hop.text.is_ok() { ACCENT2 } else { BAD };
+        let color = if hop.text.is_ok() { TEXT } else { BAD };
         chain.push(Span::styled(hop.server.clone(), Style::default().fg(color)));
         chain.push(Span::styled(format!(" {:.0}ms", hop.ms), Style::default().fg(FAINT)));
     }
     if q.finished.is_none() {
-        chain.push(Span::styled(format!(" → {}", spinner(t)), Style::default().fg(ACCENT)));
+        chain.push(Span::styled(format!(" → {}", spinner(t)), Style::default().fg(DIM)));
     }
     f.render_widget(Paragraph::new(vec![first, Line::from(chain)]).block(panel("whois")), area);
 }
@@ -78,7 +77,7 @@ fn draw_summary(f: &mut Frame, q: &WhoisLookup, area: Rect, t: f32) {
     }
 
     if q.summary.is_empty() {
-        let msg = if q.finished.is_none() { format!("{} asking around…", spinner(t)) } else { "no structured fields found".into() };
+        let msg = if q.finished.is_none() { format!("{} querying", spinner(t)) } else { "no structured fields found".into() };
         lines.push(Line::from(Span::styled(format!(" {msg}"), Style::default().fg(DIM))));
     }
     for (k, v) in &q.summary {
@@ -104,7 +103,7 @@ fn draw_raw(f: &mut Frame, app: &App, q: &WhoisLookup, area: Rect) {
     for hop in q.hops.iter().rev() {
         lines.push(Line::from(Span::styled(
             format!("── {} ", hop.server),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
         )));
         match &hop.text {
             Err(e) => lines.push(Line::from(Span::styled(e.clone(), Style::default().fg(BAD)))),
@@ -129,7 +128,7 @@ fn highlight(l: &str) -> Line<'static> {
     }
     match l.split_once(':') {
         Some((k, v)) if k.len() < 48 && !k.contains("//") => Line::from(vec![
-            Span::styled(format!("{k}:"), Style::default().fg(ACCENT2)),
+            Span::styled(format!("{k}:"), Style::default().fg(ACCENT)),
             Span::styled(v.to_string(), Style::default().fg(TEXT)),
         ]),
         _ => Line::from(Span::styled(l.to_string(), Style::default().fg(DIM))),

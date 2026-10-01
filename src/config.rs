@@ -5,13 +5,11 @@ use serde::Deserialize;
 /// `~/.config/wooma/config.toml`, every field optional:
 ///
 /// ```toml
-/// splash = false
 /// abuseipdb_key = "..."
 /// ```
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    pub splash: Option<bool>,
     pub abuseipdb_key: Option<String>,
 }
 
@@ -35,9 +33,6 @@ impl Config {
         };
         if let Ok(key) = std::env::var("ABUSEIPDB_KEY") {
             cfg.abuseipdb_key = Some(key);
-        }
-        if std::env::var_os("WOOMA_NO_SPLASH").is_some() {
-            cfg.splash = Some(false);
         }
         cfg.abuseipdb_key = cfg.abuseipdb_key.filter(|k| !k.trim().is_empty());
         Ok(cfg)

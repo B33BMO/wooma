@@ -53,11 +53,6 @@ pub struct App {
     pub enricher: Enricher,
     pub config: Config,
     pub tab: Tab,
-    pub prev_tab: Tab,
-    /// When the current tab became active, for the tab-switch animation.
-    pub tab_changed: Instant,
-    pub started: Instant,
-    pub splash: bool,
     pub quit: bool,
     /// Some(buffer) while the user is typing into the prompt.
     pub input: Option<String>,
@@ -81,17 +76,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(rt: Handle, config: Config, tab: Tab, targets: Vec<String>, splash: bool) -> Self {
+    pub fn new(rt: Handle, config: Config, tab: Tab, targets: Vec<String>) -> Self {
         let enricher = Enricher::new(rt.clone());
         let mut app = Self {
             rt,
             enricher,
             config,
             tab,
-            prev_tab: tab,
-            tab_changed: Instant::now(),
-            started: Instant::now(),
-            splash,
             quit: false,
             input: None,
             scroll: [0; Tab::ALL.len()],
@@ -120,11 +111,7 @@ impl App {
     }
 
     pub fn set_tab(&mut self, tab: Tab) {
-        if tab != self.tab {
-            self.prev_tab = self.tab;
-            self.tab = tab;
-            self.tab_changed = Instant::now();
-        }
+        self.tab = tab;
         // Landing on the ip tab with nothing to show: look ourselves up.
         if tab == Tab::Ip && self.ip.is_none() {
             self.run(Tab::Ip, "");
@@ -200,10 +187,6 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
-        if self.splash {
-            self.splash = false;
-            return;
-        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.quit = true;
             return;

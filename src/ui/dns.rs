@@ -1,33 +1,20 @@
 use std::net::IpAddr;
 
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
 
-use super::panel;
+use super::{empty_hint, panel};
 use super::theme::*;
 use crate::app::App;
 use crate::net::dns::{DnsQuery, QState};
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, t: f32) {
     let Some(q) = &app.dns else {
-        let msg = Paragraph::new(vec![
-            Line::raw(""),
-            Line::from(Span::styled("ask the internet a question", Style::default().fg(DIM))),
-            Line::from(vec![
-                Span::styled("press ", Style::default().fg(FAINT)),
-                Span::styled("a", Style::default().fg(ACCENT2)),
-                Span::styled(" and type a domain or ip  ·  ", Style::default().fg(FAINT)),
-                Span::styled("s", Style::default().fg(ACCENT2)),
-                Span::styled(format!(" resolver: {}", app.resolver.label()), Style::default().fg(FAINT)),
-            ]),
-        ])
-        .alignment(Alignment::Center)
-        .block(panel("dns"));
-        f.render_widget(msg, area);
-        return;
+        let hint = format!("press a and enter a domain or ip (resolver: {}, s to change)", app.resolver.label());
+        return empty_hint(f, area, "dns", "No query", &hint);
     };
     let q = q.lock().unwrap();
 
@@ -46,15 +33,14 @@ fn draw_info(f: &mut Frame, q: &DnsQuery, area: Rect, t: f32) {
     let done = total - q.sections.iter().filter(|s| matches!(s.state, QState::Pending)).count();
     let status = match q.finished {
         Some(fin) => Span::styled(
-            format!("✓ done in {:.0} ms", fin.duration_since(q.started).as_secs_f64() * 1000.0),
+            format!("done in {:.0} ms", fin.duration_since(q.started).as_secs_f64() * 1000.0),
             Style::default().fg(GOOD),
         ),
-        None => Span::styled(format!("{} {done}/{total} answered", spinner(t)), Style::default().fg(ACCENT)),
+        None => Span::styled(format!("{} {done}/{total} answered", spinner(t)), Style::default().fg(DIM)),
     };
     let lines = vec![
         Line::from(vec![
-            Span::styled(" ? ", Style::default().fg(ACCENT)),
-            Span::styled(q.input.clone(), Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {}", q.input), Style::default().fg(TEXT).add_modifier(Modifier::BOLD)),
             Span::styled(format!("  via {}", q.resolver.label()), Style::default().fg(DIM)),
         ]),
         Line::from(vec![Span::raw(" "), status]),
@@ -64,11 +50,11 @@ fn draw_info(f: &mut Frame, q: &DnsQuery, area: Rect, t: f32) {
 
 fn draw_records(f: &mut Frame, app: &App, q: &DnsQuery, area: Rect, t: f32) {
     let mut lines: Vec<Line> = Vec::new();
-    for (i, sec) in q.sections.iter().enumerate() {
+    for sec in &q.sections {
         let name = format!(" {:<6}", sec.rtype.to_string());
         let (head_color, timing) = match &sec.state {
-            QState::Pending => (ACCENT, format!("{}", spinner(t + i as f32 * 0.1))),
-            QState::Found { ms, .. } => (ACCENT2, format!("{ms:.0} ms")),
+            QState::Pending => (DIM, spinner(t).to_string()),
+            QState::Found { ms, .. } => (ACCENT, format!("{ms:.0} ms")),
             QState::Empty { ms, .. } => (DIM, format!("{ms:.0} ms")),
             QState::Failed { ms, .. } => (BAD, format!("{ms:.0} ms")),
         };
@@ -94,7 +80,7 @@ fn draw_records(f: &mut Frame, app: &App, q: &DnsQuery, area: Rect, t: f32) {
                 }
             }
             QState::Empty { nxdomain: true, .. } => {
-                lines.push(Line::from(Span::styled("   NXDOMAIN — name does not exist", Style::default().fg(BAD))));
+                lines.push(Line::from(Span::styled("   NXDOMAIN: name does not exist", Style::default().fg(BAD))));
             }
             QState::Empty { .. } => {
                 lines.push(Line::from(Span::styled("   (no records)", Style::default().fg(FAINT))));
@@ -119,21 +105,19 @@ fn draw_race(f: &mut Frame, q: &DnsQuery, area: Rect, t: f32) {
     let times: Vec<f64> = q.race.iter().filter_map(|r| r.result.as_ref()?.as_ref().ok().copied()).collect();
     let max = times.iter().copied().fold(1.0f64, f64::max);
     let best = times.iter().copied().fold(f64::INFINITY, f64::min);
-    // Bars grow into place once a result lands, rather than snapping.
-    let grow = ease_out(q.started.elapsed().as_secs_f32() / 0.6);
 
     let mut lines = vec![];
     for r in &q.race {
         let mut spans = vec![Span::styled(format!(" {:<19}", r.resolver.label()), Style::default().fg(DIM))];
         match &r.result {
-            None => spans.push(Span::styled(spinner(t).to_string(), Style::default().fg(ACCENT))),
+            None => spans.push(Span::styled(spinner(t).to_string(), Style::default().fg(DIM))),
             Some(Err(_)) => spans.push(Span::styled("failed", Style::default().fg(BAD))),
             Some(Ok(ms)) => {
-                let w = ((ms / max) * bar_w as f64 * grow as f64).round().max(1.0) as usize;
-                spans.push(Span::styled("█".repeat(w), Style::default().fg(rtt_color(*ms))));
+                let w = ((ms / max) * bar_w as f64).round().max(1.0) as usize;
+                spans.push(Span::styled("━".repeat(w), Style::default().fg(rtt_color(*ms))));
                 spans.push(Span::styled(format!(" {ms:.0}ms"), Style::default().fg(TEXT)));
                 if *ms == best && times.len() > 1 {
-                    spans.push(Span::styled(" ★", Style::default().fg(WARN)));
+                    spans.push(Span::styled(" fastest", Style::default().fg(DIM)));
                 }
             }
         }
@@ -162,7 +146,7 @@ fn draw_network(f: &mut Frame, app: &App, q: &DnsQuery, area: Rect, t: f32) {
             match v {
                 Some(v) => Span::styled(v, Style::default().fg(TEXT)),
                 None if !info.done => Span::styled(spinner(t).to_string(), Style::default().fg(FAINT)),
-                None => Span::styled("—", Style::default().fg(FAINT)),
+                None => Span::styled("-", Style::default().fg(FAINT)),
             },
         ])
     };

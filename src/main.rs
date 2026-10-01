@@ -3,7 +3,7 @@ mod config;
 mod net;
 mod ui;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
@@ -11,15 +11,12 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use app::{App, Tab};
 use config::Config;
 
-/// wooma — a flowy terminal toolkit for network and IT tooling.
+/// wooma: a terminal toolkit for network diagnostics.
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
-    /// Skip the intro animation (or set `splash = false` in the config file)
-    #[arg(long, global = true)]
-    no_splash: bool,
 }
 
 #[derive(Subcommand)]
@@ -66,14 +63,10 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Speed) => (Tab::Speed, vec![]),
         Some(Cmd::Config) => return print_config(&config),
     };
-    // The intro is for launching the app, not for jumping straight to a tool.
-    let direct = !targets.is_empty() || tab == Tab::Speed;
-    let splash = !cli.no_splash && !direct && config.splash.unwrap_or(true);
-
     raise_fd_limit();
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build()?;
     let _guard = rt.enter();
-    let mut app = App::new(rt.handle().clone(), config, tab, targets, splash);
+    let mut app = App::new(rt.handle().clone(), config, tab, targets);
 
     let mut terminal = ratatui::init();
     let result = run(&mut terminal, &mut app);
@@ -83,12 +76,10 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> anyhow::Result<()> {
-    let frame = Duration::from_millis(33);
+    let frame = Duration::from_millis(100);
+    let started = Instant::now();
     while !app.quit {
-        if app.splash && app.started.elapsed().as_secs_f32() > ui::splash::DURATION {
-            app.splash = false;
-        }
-        terminal.draw(|f| ui::draw(f, app))?;
+        terminal.draw(|f| ui::draw(f, app, started.elapsed().as_secs_f32()))?;
         if event::poll(frame)?
             && let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
@@ -101,16 +92,17 @@ fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> anyhow::Result
 
 fn print_config(config: &Config) -> anyhow::Result<()> {
     let path = config::path();
-    println!("config file: {}{}", path.display(), if path.exists() { "" } else { "  (not created yet)" });
-    println!("splash:        {}", config.splash.unwrap_or(true));
+    println!("config file:   {}{}", path.display(), if path.exists() { "" } else { "  (not created yet)" });
     let key = match &config.abuseipdb_key {
         Some(k) if k.len() > 8 => format!("{}…{}", &k[..4], &k[k.len() - 4..]),
         Some(_) => "set".into(),
         None => "not set (get a free key at https://www.abuseipdb.com/account/api)".into(),
     };
     println!("abuseipdb_key: {key}");
-    println!("\nexample config.toml:\n  splash = false\n  abuseipdb_key = \"your-key\"");
-    println!("\nenv overrides: WOOMA_NO_SPLASH=1, ABUSEIPDB_KEY=..., WOOMA_CONFIG=/path");
+    let icmp = net::icmp::probe().replace('\n', "\n               ");
+    println!("icmp:          {icmp}");
+    println!("\nexample config.toml:\n  abuseipdb_key = \"your-key\"");
+    println!("\nenv overrides: ABUSEIPDB_KEY=..., WOOMA_CONFIG=/path");
     Ok(())
 }
 
